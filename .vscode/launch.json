@@ -11,7 +11,12 @@
             "program": "${file}",
             "console": "integratedTerminal", 
             "env": {
-                "X-API-KEY" : "sk_ea24322b6cd94f79af16fd7b98b9e5ad"
+                "X-API-KEY" : "sk_ea24322b6cd94f79af16fd7b98b9e5ad",
+                "FINTEL_DB_NAME" : "fintel_db",
+                "FINTEL_DB_USER" : "superset",
+                "FINTEL_DB_PASS" : "superset",
+                "FINTEL_DB_HOST" : "localhost",
+                "FINTEL_DB_PORT" : "5432"
             }
         }
     ]
