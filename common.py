@@ -42,6 +42,7 @@ class OutputPathSingleton:
             # Construct path
             date_str = now_est.strftime("%Y%m%d")
             results_dir = os.path.join(RETRIEVED_JSON_PATH, f"{date_str}")
+
             os.makedirs(results_dir, exist_ok=True)
             return results_dir
         except Exception as e:
@@ -57,7 +58,7 @@ class OutputPathSingleton:
 
 
 
-def convert_timestamp_columns(df: pd.DataFrame, columns: list[str] = None, format_map: dict = { 'fileDate': '%Y-%m-%d', 'effectiveDate': '%Y-%m-%d', 'formattedFileDate': '%m-%d' }) -> pd.DataFrame:
+def convert_timestamp_columns(df: pd.DataFrame, columns: list[str] = None, format_map: dict = { 'filedate': '%Y-%m-%d', 'effectivedate': '%Y-%m-%d', 'formattedfiledate': '%m-%d' }) -> pd.DataFrame:
     """
     Convert timestamp columns to datetime using optional format mapping.
 
@@ -93,6 +94,7 @@ def top_shareholders_by_symbol(df, top_n=20):
 
     # Drop rows where symbol, name or shares are missing
     df = df.dropna(subset=["symbol", "name", "shares"])
+    df = df.reset_index(drop=True).copy()
 
     # Ensure 'shares' is numeric
     df["shares"] = pd.to_numeric(df["shares"], errors="coerce").fillna(0)

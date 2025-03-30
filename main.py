@@ -12,7 +12,8 @@ from common import  OutputPathSingleton, convert_timestamp_columns, top_sharehol
 from common import RETRIEVED_JSON_PATH, DEBUG
 
 from stock_analyzer import StockOwnershipAnalyzer
-
+from stock_ownership import StockOwnershipAPI
+from stock_price import StockDataManager
 from db_data_handler import DBDataHandler
 
 
@@ -39,63 +40,21 @@ FINTEL_DB_HOST = os.environ.get("FINTEL_DB_HOST")
 FINTEL_DB_PORT = os.environ.get("FINTEL_DB_PORT")
 
 
-class StockOwnershipAPI:
-    """
-    Encapsulates API interactions for stock ownership retrieval.
-    """
-
-    #BASE_URL = "https://api.fintel.io/data/v/0.0/so/us/"
-
-    def __init__(self, api_key, base_url='https://api.fintel.io/data/v/0.0/so/us/'):
-        self.api_key = api_key
-        self.base_url = base_url
-        self.session = requests.Session()
-        self.session.headers.update({
-            "accept": "application/json",
-            "X-API-KEY": api_key
-        })
-
-    def fetch_data(self, slug):
-        """
-        Fetches stock ownership data from the API.
-        """
-        try:
-            url = f"{self.base_url}{slug}"
-            response = self.session.get(url)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to fetch data for {slug}: {e}")
-            return {}
-
-    def retrieve_sisters_data(self, slug_list):
-        """
-        Retrieves and stores data for the 7 sisters stocks.
-        """
-        results_dir = OutputPathSingleton.get_path()
-        if not results_dir:
-            return False
-
-        for slug in slug_list:
-            file_path = os.path.join(results_dir, f"{slug}.json")
-
-            if os.path.exists(file_path):
-                logging.info(f"Skipping {slug}, file already exists.")
-                continue
-
-            data = self.fetch_data(slug)
-            if data:
-                with open(file_path, "w") as f:
-                    json.dump(data, f)
-                    logging.info(f"Saved {file_path}")
-        
-        logging.info("Data retrieval completed.")
-        return True
-
-
 
 if __name__ == "__main__":
     results_dir = OutputPathSingleton.get_path()
+
+    db_file = os.path.abspath(os.path.join(results_dir, '../stocks_price.db'))
+    manager = StockDataManager(db_url=f'sqlite:///{db_file}', symbols=SISTER_7_SLUGS, default_start_date="2024-01-01")
+    manager.update_data()
+    df_stock_price = manager.get_data()
+
+    db_handler_stock_price = DBDataHandler(FINTEL_DB_NAME, FINTEL_DB_USER, FINTEL_DB_PASS, FINTEL_DB_HOST, int(FINTEL_DB_PORT),
+                         ['symbol', 'date'])
+    db_handler_stock_price.initialize_table(df_stock_price, 'stock_price')
+    db_handler_stock_price.upload_dataframe(df_stock_price, 'stock_price' )
+
+
     api_client = StockOwnershipAPI(X_API_KEY, base_url='https://api.fintel.io/data/v/0.0/so/us/')
     api_client.retrieve_sisters_data(slug_list=SISTER_7_SLUGS)
     #api_client = StockOwnershipAPI(X_API_KEY, base_url='https://api.fintel.io/data/v/0.0/i/')
@@ -106,10 +65,6 @@ if __name__ == "__main__":
     df.columns = df.columns.str.lower() # changed column names to lowercase to fit the DB schema
     df = convert_timestamp_columns(df, ['filedate', 'effectivedate', 'formattedfiledate'])
 
-
-    # get all symbols 
-    symbols = df['symbol'].unique()
-    df_tsla = df[df['symbol']=='MU']
 
 
     result = top_shareholders_by_symbol(df, top_n=50)
@@ -143,8 +98,5 @@ if __name__ == "__main__":
     db_handler_fund.upload_dataframe(df_s, 'fund' )
 
 
-
-    # calculate the sum of column ownershipPercent 
-    total_ownership = df_tsla['value'].sum()
 
     print('Done')
