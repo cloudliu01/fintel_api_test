@@ -159,7 +159,11 @@ class StockDataManager:
             offset = today.weekday() - 4
             today = today - timedelta(days=offset)
 
-        for symbol in self.symbols:
+        for idx, symbol in enumerate(self.symbols):
+            if idx % 20 == 0:
+                print('=====================================================')
+                print(f"  {idx} of {len(self.symbols)} symbols processed...")
+                print('=====================================================')
             print(f"\nUpdating data for {symbol}...")
             last_dt_in_db = self._get_last_datetime_in_db(symbol)
 

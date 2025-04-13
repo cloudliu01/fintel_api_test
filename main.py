@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import requests
 import pytz
@@ -28,8 +29,8 @@ if DEBUG:
 SISTER_7_SLUGS = ['googl', 'amzn', 'meta', 'nvda', 'aapl', 'msft', 'tsla', 'intc', 'qcom', 'mu']
 
 
-#if DEBUG:
-#    SISTER_7_SLUGS = ['intc']
+if DEBUG:
+    SISTER_7_SLUGS = ['intc']
 
 #SISTER_7_SLUGS = ['tsla']
 X_API_KEY = os.environ.get("X-API-KEY")
@@ -43,16 +44,6 @@ FINTEL_DB_PORT = os.environ.get("FINTEL_DB_PORT")
 
 if __name__ == "__main__":
     results_dir = OutputPathSingleton.get_path()
-
-    db_file = os.path.abspath(os.path.join(results_dir, '../stocks_price.db'))
-    manager = StockDataManager(db_url=f'sqlite:///{db_file}', symbols=SISTER_7_SLUGS, default_start_date="2024-01-01")
-    manager.update_data()
-    df_stock_price = manager.get_data()
-
-    db_handler_stock_price = DBDataHandler(FINTEL_DB_NAME, FINTEL_DB_USER, FINTEL_DB_PASS, FINTEL_DB_HOST, int(FINTEL_DB_PORT),
-                         ['symbol', 'date'])
-    db_handler_stock_price.initialize_table(df_stock_price, 'stock_price')
-    db_handler_stock_price.upload_dataframe(df_stock_price, 'stock_price' )
 
 
     api_client = StockOwnershipAPI(X_API_KEY, base_url='https://api.fintel.io/data/v/0.0/so/us/')
@@ -87,11 +78,39 @@ if __name__ == "__main__":
     df_s['formattedfiledate'] = df_s['formattedfiledate'].apply(parse_formatted_file_date)
 
 
-    # initialize the DB handler
+    # get top n  stocks by total value 
+    top_n = 1000
+    df_symbol_value_top_n = df_s[~df_s['exchangesymbol'].isna() & ~df_s['security_symbol'].isna()].groupby('security_symbol')['value'].sum().sort_values(ascending=False).head(top_n).reset_index(name='total_value')
+    top_n_stock_symbols = df_symbol_value_top_n['security_symbol'].unique()
+
+    # To ignore symbols with special '*' (maybe unlisted) which would cause issues 
+    #with storing stock price data 
+    top_n_stock_symbols = [s for s in top_n_stock_symbols if not re.match(r'.* \*$', s)] 
+
+    # to get stock price data, put it to sqlite 
+    db_file = os.path.abspath(os.path.join(results_dir, '../stocks_price.db'))
+    manager = StockDataManager(db_url=f'sqlite:///{db_file}', symbols=top_n_stock_symbols, default_start_date="2024-09-30")
+    manager.update_data()
+    df_stock_price = manager.get_data(symbols=top_n_stock_symbols)
+
+    # push the stock price data to the PostgreSQL DB
+    db_handler_stock_price = DBDataHandler(FINTEL_DB_NAME, FINTEL_DB_USER, FINTEL_DB_PASS, FINTEL_DB_HOST, int(FINTEL_DB_PORT),
+                         ['symbol', 'date'])
+    db_handler_stock_price.initialize_table(df_stock_price, 'stock_price')
+    db_handler_stock_price.upload_dataframe(df_stock_price, 'stock_price' )
+
+
+    # push the ownership data to the PostgreSQL DB
     db_handler = DBDataHandler(FINTEL_DB_NAME, FINTEL_DB_USER, FINTEL_DB_PASS, FINTEL_DB_HOST, int(FINTEL_DB_PORT))
     db_handler.initialize_table(df, 'stock')
     db_handler.upload_dataframe(df, 'stock' )
 
+    # to create index for quickly searching symbols, useful for grouping symbols to find the latest rows (by effectivedate)
+    db_handler_fund = DBDataHandler(FINTEL_DB_NAME, FINTEL_DB_USER, FINTEL_DB_PASS, FINTEL_DB_HOST, int(FINTEL_DB_PORT),
+                         ['exchangesymbol', 'slug', 'effectivedate'])
+    db_handler_fund.initialize_table(df_s, 'fund', '_symbol_idx', unique='')
+
+    # push the fund ownership data to the PostgreSQL DB
     db_handler_fund = DBDataHandler(FINTEL_DB_NAME, FINTEL_DB_USER, FINTEL_DB_PASS, FINTEL_DB_HOST, int(FINTEL_DB_PORT),
                          ['exchangesymbol', 'slug', 'formtype', 'filedate', 'effectivedate', 'shares', 'shareschange', 'value'])
     db_handler_fund.initialize_table(df_s, 'fund')

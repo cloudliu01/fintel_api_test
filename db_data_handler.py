@@ -76,12 +76,14 @@ class DBDataHandler:
             raise
 
 
-    def initialize_table(self, df, table_name: str):
+    def initialize_table(self, df, table_name: str, idx_suffix: str = "_uniq_idx", unique='UNIQUE'):
         """
         Explicitly initialize (create) the table based on a provided schema.
 
         :param table_name: Name of the target table
         :param schema: Dict of column_name: numpy/pandas dtype
+        :param idx_suffix: Suffix for the unique index
+        :param unique: Unique constraint type ('UNIQUE' or '')
         """
         metadata = MetaData()
         columns = []
@@ -102,12 +104,11 @@ class DBDataHandler:
         table = Table(table_name, metadata, *columns)
         metadata.create_all(self.engine)
 
-        self.create_unique_index_if_not_exists(table_name)
+        self.create_unique_index_if_not_exists(table_name, idx_suffix, unique)
 
-
-    def create_unique_index_if_not_exists(self, table_name):
+    def create_unique_index_if_not_exists(self, table_name, idx_suffix, unique):
         unique_str = ", ".join(f'"{col}"' for col in self.unique_cols)
-        index_name = f"{table_name}_uniq_idx"
+        index_name = f"{table_name}{idx_suffix}"
 
         create_index_sql = f'''
         DO $$
@@ -116,7 +117,7 @@ class DBDataHandler:
                 SELECT 1 FROM pg_class c
                 WHERE c.relname = '{index_name}'
             ) THEN
-                EXECUTE 'CREATE UNIQUE INDEX {index_name} ON "{table_name}" ({unique_str})';
+                EXECUTE 'CREATE {unique} INDEX {index_name} ON "{table_name}" ({unique_str})';
             END IF;
         END$$;
         '''
